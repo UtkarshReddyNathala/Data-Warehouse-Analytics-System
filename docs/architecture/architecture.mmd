@@ -1,0 +1,45 @@
+%% Source of docs/architecture/architecture.png (Mermaid). It shows how data flows from the
+%% CSV files to the analytics views, and which control tables drive and check each step.
+flowchart LR
+    subgraph SRC["CRM and ERP source data"]
+        F1["6 CSV files<br/>data/crm, data/erp"]
+    end
+
+    subgraph ING["Ingestion and change detection"]
+        L["landing.*<br/>raw text, row numbers"]
+        S["source.*<br/>simulated operational DB<br/>primary keys"]
+        FL[("audit.file_ingestion_log<br/>SHA-256 checksums")]
+    end
+
+    subgraph CDC["Change capture"]
+        C1["SQL Server CDC<br/>CRM tables<br/>LSN watermark"]
+        C2["ROWVERSION watermark<br/>ERP tables"]
+        C3["Checksum snapshot<br/>category table"]
+    end
+
+    subgraph MED["Medallion layers"]
+        B["bronze.*<br/>append-only change log<br/>I / U / B / D / S"]
+        SV["silver.*<br/>cleaned current state<br/>incremental MERGE"]
+        G["gold.*<br/>star schema<br/>SCD1 + SCD2"]
+    end
+
+    subgraph CTRL["Metadata, quality and audit"]
+        CFG[("audit.etl_config")]
+        DQ[("audit.dq_rule<br/>audit.dq_result")]
+        AUD[("audit.etl_batch<br/>etl_step_log<br/>etl_error_log")]
+    end
+
+    AN["Analytics views<br/>KPIs, retention,<br/>product and sales"]
+
+    F1 --> L --> S
+    L -.-> FL
+    S --> C1 --> B
+    S --> C2 --> B
+    S --> C3 --> B
+    B --> SV --> G --> AN
+    CFG -. drives .-> L
+    CFG -. drives .-> B
+    CFG -. drives .-> SV
+    SV -. checked by .-> DQ
+    G -. checked by .-> DQ
+    MED -. logged in .-> AUD
